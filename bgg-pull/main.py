@@ -5,6 +5,8 @@ import pandas as pd
 import numpy as np
 import duckdb
 import time
+import argparse
+import random
 from xml.etree import ElementTree
 from dotenv import load_dotenv
 
@@ -114,12 +116,10 @@ CREATE TABLE IF NOT EXISTS bgg.games (
 
   # Create table 2: comments
   print("Creating comments table...")
-  con.execute("CREATE SEQUENCE IF NOT EXISTS seq_id START 1;")
   create_comments_table = f"""
 CREATE TABLE IF NOT EXISTS bgg.comments (
-  id INTEGER PRIMARY KEY DEFAULT nextval('seq_id'),
   bgg_id INTEGER,
-  rating INTEGER,
+  rating DOUBLE,
   comment TEXT
 );
   """
@@ -183,9 +183,10 @@ def retrieve_game_info(bgg_id: int):
 # ========================================
 def retrieve_game_comments(
   bgg_id: int,
+  page_range: int = 550,
   min_words: int = 15,
   max_pages: int = 20,
-  max_comments: int = 30
+  min_comments: int = 30
 ):
   interval = 10
   comments = {
@@ -193,11 +194,18 @@ def retrieve_game_comments(
     "rating": [],
     "comment": []
   }
+  page_numbers = [i for i in range(1, page_range+1)]
+  searched_pages = 1
+  it = 0
 
-  for page in range(1, max_pages+1):
-    url = f"https://boardgamegeek.com/xmlapi2/thing?id={bgg_id}&type=boardgame&stats=1&comments=1&page={page}"
+  print(f"[COMMENT] Attempting to retrieve game comments with id: {bgg_id}.")
+  while searched_pages < max_pages:
+    time.sleep(interval)
+    it += 1
+    page = random.choice(page_numbers)
+    url = f"https://boardgamegeek.com/xmlapi2/thing?id={bgg_id}&type=boardgame&ratingcomments=1&page={page}"
+    print(f"    Iteration: {it} | Page: {page} | Number of Comments: {len(comments['comment'])} | Number of pages searched: {searched_pages}")
 
-    print(f"[COMMENT] Attempting to retrieve game comments with id: {bgg_id}. Page: {page}")
     response = requests.get(
       url,
       headers={"Authorization": f"Bearer {TOKEN}"}
@@ -209,7 +217,12 @@ def retrieve_game_comments(
       print(f"[COMMENT] Error: Failed to retrieve game comments")
       continue
 
+    # Check if there are any comments on the page
     all_comments = tree.findall('.//comment')
+    if not all_comments:
+      print("[COMMENT] No comments found on this page.")
+      continue
+
     for comment in all_comments:
       text = comment.get('value').strip()
       if len(text.split(' ')) < min_words:
@@ -221,14 +234,16 @@ def retrieve_game_comments(
       if rating == 'N/A':
         rating = np.nan
       comments['bgg_id'].append(bgg_id)
-      comments['rating'].append(int(rating) if isinstance(rating, str) else rating)
+      comments['rating'].append(float(rating) if isinstance(rating, str) else rating)
       comments['comment'].append(text)
-
-    time.sleep(interval)
     
     # Exit condition
-    if len(comments['comment']) >= max_comments:
-      return comments
+    searched_pages += 1
+
+    if len(comments['comment']) > min_comments:
+      break
+    
+
   return comments
 
 # ========================================
@@ -261,9 +276,10 @@ def main(
   duckdb_path: str,
   bgg_csv_path: str,
   num_games_to_ingest: int = 1,
+  page_range: int = 550,
   min_words: int = 15,
   max_pages: int = 20,
-  max_comments: int = 30
+  min_comments: int = 30
 ):
   con = setup_duckdb(DUCKDB_PATH)
   df = pd.read_csv(BGG_CSV_PATH)
@@ -273,9 +289,10 @@ def main(
     game_info = retrieve_game_info(bgg_id)
     game_comments = retrieve_game_comments(
       bgg_id,
+      page_range,
       min_words,
       max_pages,
-      max_comments
+      min_comments
     )
     df = insert_and_update(bgg_id, con, game_info, game_comments, df)
   
@@ -283,7 +300,23 @@ def main(
   con.close()
 
 if __name__ == "__main__":
+  parser = argparse.ArgumentParser(
+    prog="BGG Data Puller",
+    description="Pull BGG data based on the boardgames_rank.csv starting from the most popular entries"
+  )
+  parser.add_argument('-n', '--num', type=int, default=1, help="Number of games to ingest starting from the most popular. (Default 1)")
+  parser.add_argument('-p', '--pages', type=int, default=20, help="Maximum number of comment pages to search through (Default 20)")
+  parser.add_argument('-r', '--range', type=int, default=550, help="Range of comment pages to randomly search across. (Default 550)")
+  parser.add_argument('-c', '--comments', type=int, default=30, help="Minimum number comments to collect (Default 30)")
+  parser.add_argument('-w', '--words', type=int, default=15, help="Minimum number of words in a comment to be included (Default 15)")
+  args = parser.parse_args()
+
   main(
     DUCKDB_PATH,
     BGG_CSV_PATH,
+    num_games_to_ingest=args.num,
+    page_range=args.range,
+    min_words=args.words,
+    max_pages=args.pages,
+    min_comments=args.comments
   )
