@@ -296,7 +296,7 @@ def main(
     )
     df = insert_and_update(bgg_id, con, game_info, game_comments, df)
   
-  df.to_csv(BGG_CSV_PATH)
+  df.to_csv(BGG_CSV_PATH, index=False)
   con.close()
 
 if __name__ == "__main__":
