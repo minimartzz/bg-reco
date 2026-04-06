@@ -21,6 +21,7 @@ class DataConfig:
 class EmbeddingConfig:
   model_name: str = "all-MiniLM-L6-v2"
   embedding_dim: int = 128
+  use_sentence_transformers: bool = True
   max_comments_per_game: int = 50
   batch_size: int = 32
 

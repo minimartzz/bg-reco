@@ -1,5 +1,5 @@
 """
-Data Preprocessing Module
+Game Profile Builder
 ========================================
 Creates a "profile" for each game by combining various features about one.
 
@@ -21,8 +21,10 @@ projects this into a the shared embedding space allowing downstream model to wei
 import numpy as np
 import pandas as pd
 from typing import Protocol, List, Dict, Optional
+from sklearn.decomposition import TruncatedSVD
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sentence_transformers import SentenceTransformer
-from config import EmbeddingConfig, GAME_TAG_COLUMNS
+from config import EmbeddingConfig, GAME_TAG_COLUMNS, GAME_NUMERIC_FEATURES
 from preprocessing import multi_hot_encode
 
 # ---- SENTENCE TRANSFORMER ENCODER --------------------
@@ -32,6 +34,43 @@ class TextEncoder(Protocol):
 
     @property
     def dim(self) -> int: ...
+
+class TfidfSvdEncoder:
+  """
+  TF-IDF + Truncated SVD encoding.
+
+  Offline fallback. Primary production use case will be sentence transformer
+  """
+  def __init__(self, dim: int = 128):
+    self._dim = dim
+    self.vectorizer = TfidfVectorizer(
+      max_features=5000,
+      stop_words='english',
+      ngram_range=(1, 2),
+      sublinear_tf=True # Sublinear term frequency scaling to reduce impact of high-frequency terms
+    )
+    self.svd = TruncatedSVD(n_components=dim, random_state=42)
+    self._fitted = False
+  
+  @property
+  def dim(self) -> int:
+    return self._dim
+  
+  def fit(self, corpus: List[str]) -> "TfidfSvdEncoder":
+    """Fits corpus of descriptions + comments"""
+    tfidf = self.vectorizer.fit_transform(corpus)
+    actual_components = min(self._dim, tfidf.shape[1], tfidf.shape[0])
+    if actual_components < self._dim:
+      self.svd = TruncatedSVD(n_components=actual_components, random_state=42)
+      self._dim = actual_components
+    self.svd.fit(tfidf)
+    self._fitted = True
+    return self
+  
+  def encode(self, texts: List[str]) -> np.ndarray:
+    """For prediction on next text: Transforms text to (n_text, dim) dense matrix"""
+    tfidf = self.vectorizer.transform(texts)
+    return self.svd.transform(tfidf).astype(np.float32)
     
 class SentenceTransformerEncoder:
   def __init__(self, model_name: str = "all-MiniLM-L6-v2", batch_size: int = 32):
@@ -55,14 +94,16 @@ def build_encoder(
   comments: List[str],
   cfg: EmbeddingConfig
 ):
-  try:
-    enc = SentenceTransformerEncoder(cfg.model_name, cfg.batch_size)
-    cfg.embedding_dim = enc.dim
-    return enc
-  except Exception as e:
-    print(f"[GAME BUILDER] Error initializing the sentence transformer encoder: {e}")
+  if cfg.use_sentence_transformers:
+    try:
+      enc = SentenceTransformerEncoder(cfg.model_name, cfg.batch_size)
+      cfg.embedding_dim = enc.dim
+      return enc
+    except Exception as e:
+      print(f"[GAME BUILDER] Error initializing the sentence transformer encoder: {e}")
   
   corpus = [t for t in descriptions + comments if t.strip()]
+  enc = TfidfSvdEncoder(cfg.embedding_dim)
   enc.fit(corpus)
   return enc
 
@@ -148,5 +189,10 @@ def build_game_profiles(
   
   return profiles, encoder
 
-def get_profile_dim():
-  return
+def get_profile_dim(
+  tag_vocabs: Dict[str, Dict[str, int]],
+  cfg: EmbeddingConfig = EmbeddingConfig(),
+  n_numeric: int = len(GAME_NUMERIC_FEATURES)
+):
+  tag_dim = sum(len(vocab) for vocab in tag_vocabs.values())
+  return 2 * cfg.embedding_dim + tag_dim + n_numeric
