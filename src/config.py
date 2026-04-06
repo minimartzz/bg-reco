@@ -6,6 +6,7 @@ Configurations for Model Training
 import os
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
+from typing import List
 
 load_dotenv()
 
@@ -24,6 +25,19 @@ class EmbeddingConfig:
   use_sentence_transformers: bool = True
   max_comments_per_game: int = 50
   batch_size: int = 32
+
+@dataclass
+class ModelConfig:
+  tower_output_dim: int = 128
+  # Hidden layers for each tower
+  game_hidden_dims: List[int] = field(default_factory=lambda: [512, 256])
+  user_hidden_dims: List[int] = field(default_factory=lambda: [256, 128])
+  # Reranker layers
+  reranker_hidden_dims: List[int] = field(default_factory=lambda: [256, 128, 64])
+  dropout: float = 0.2
+  # Temperature for InfoNCE loss
+  temperature: float = 0.07
+  
 
 # ---- FEATURES LISTS --------------------
 # Numeric features
