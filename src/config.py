@@ -37,7 +37,22 @@ class ModelConfig:
   dropout: float = 0.2
   # Temperature for InfoNCE loss
   temperature: float = 0.07
-  
+
+@dataclass
+class TrainingConfig:
+  epochs: int = 50
+  batch_size: int = 64
+  learning_rate: float = 1e-3
+  weight_decay: float = 1e-5 
+  # Negative sampling ratio for contrastive training
+  num_negatives: int = 5
+  # Train/ Val split
+  val_fraction: float = 0.2
+  # Reranker training
+  reranker_epochs: int = 30
+  reranker_lr: float = 5e-4
+  # Number of candidates the two-tower model passes to reranker
+  retrieval_top_k = 50
 
 # ---- FEATURES LISTS --------------------
 # Numeric features
