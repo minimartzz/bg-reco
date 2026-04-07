@@ -10,7 +10,9 @@ from typing import List
 
 load_dotenv()
 
-# ---- CONFIGURATIONS --------------------
+# ========================================
+# CONFIGURATIONS
+# ========================================
 @dataclass
 class DataConfig:
   duckdb_file: str = "bgg_db.duckdb"
@@ -54,7 +56,10 @@ class TrainingConfig:
   # Number of candidates the two-tower model passes to reranker
   retrieval_top_k = 50
 
-# ---- FEATURES LISTS --------------------
+
+# ========================================
+# FEATURES LISTS
+# ========================================
 # Numeric features
 GAME_NUMERIC_FEATURES = [
   "min_players",

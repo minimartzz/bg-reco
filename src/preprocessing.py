@@ -20,6 +20,9 @@ from typing import Tuple, Dict, Set, List
 from config import DataConfig, GAME_TAG_COLUMNS, GAME_NUMERIC_FEATURES
 from sklearn.preprocessing import StandardScaler
 
+# ========================================
+# LOADING DATA
+# ========================================
 def load_data(cfg: DataConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
   """
   Loads data from both DuckDB (comments, games) and Supabase (records)
@@ -56,7 +59,10 @@ def load_data(cfg: DataConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame
 
   return records, games, comments
 
-# ---- BUILDING VOCABULARIES --------------------
+
+# ========================================
+# TAG HANDLING
+# ========================================
 def build_tag_vocabularies(
   games: pd.DataFrame,
   tag_columns: list = GAME_TAG_COLUMNS,
@@ -98,7 +104,10 @@ def multi_hot_encode(tags: List[str], vocab: Dict[str, int]) -> np.ndarray:
       vector[vocab[tag]] = 1.0
   return vector
 
-# ---- NORMALIZATION --------------------
+
+# ========================================
+# NORMALIZATION
+# ========================================
 def fit_numeric_scaler(games: pd.DataFrame) -> StandardScaler:
   """
   Fits a standard scaler on numeric columns while filling missing fields with default 0.

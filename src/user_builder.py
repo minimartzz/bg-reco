@@ -33,6 +33,9 @@ import pandas as pd
 import numpy as np
 from typing import Dict
 
+# ========================================
+# PROFILE CENTROID
+# ========================================
 def compute_interaction_weights(
   user_records: pd.DataFrame,
   alpha: float = 0.3,
@@ -82,6 +85,10 @@ def compute_interaction_weights(
     return (raw_weights / total).astype(np.float32)
   return np.ones(n, dtype=np.float32) / n
 
+
+# ========================================
+# BUILD USER PROFILE
+# ========================================
 def build_user_profile(
   user_records: pd.DataFrame,
   game_profiles: Dict[int, np.ndarray],

@@ -27,7 +27,9 @@ from sentence_transformers import SentenceTransformer
 from config import EmbeddingConfig, GAME_TAG_COLUMNS, GAME_NUMERIC_FEATURES
 from preprocessing import multi_hot_encode
 
-# ---- SENTENCE TRANSFORMER ENCODER --------------------
+# ========================================
+# TEXT ENCODERS
+# ========================================
 class TextEncoder(Protocol):
     """Encode a list of strings into dense vectors."""
     def encode(self, texts: List[str]) -> np.ndarray: ...
@@ -108,7 +110,9 @@ def build_encoder(
   return enc
 
 
-# ---- EMBED TEXTS --------------------
+# ========================================
+# TEXT EMBEDDING
+# ========================================
 def embed_descriptions(games: pd.DataFrame, encoder: TextEncoder) -> Dict[int, np.ndarray]:
   """Embed each game's description and label them by game ID"""
   ids = games['id'].tolist()
@@ -143,7 +147,9 @@ def embed_comments(
   return results
 
 
-# ---- BUILD GAME PROFILES --------------------
+# ========================================
+# BUILD GAME PROFILES
+# ========================================
 def build_game_profiles(
   games: pd.DataFrame,
   comments: pd.DataFrame,

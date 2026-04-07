@@ -41,7 +41,9 @@ import torch.nn.functional as F
 from typing import List
 from config import ModelConfig
 
-# ---- MLP --------------------
+# ========================================
+# MLP
+# ========================================
 def _build_mlp(
   input_dim: int,
   hidden_dims: List[int],
@@ -70,7 +72,9 @@ def _build_mlp(
   return nn.Sequential(*layers)
 
 
-# ---- TWO-TOWER --------------------
+# ========================================
+# GAME TOWER
+# ========================================
 class GameTower(nn.Module):
   """Projects a game vector into the shared embedding space"""
   def __init__(
@@ -86,11 +90,14 @@ class GameTower(nn.Module):
       cfg.dropout
     )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-      emb = self.net(x)
-      return F.normalize(emb, p=2, dim=-1)  # L2 normalise for cosine similarity
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    emb = self.net(x)
+    return F.normalize(emb, p=2, dim=-1)  # L2 normalise for cosine similarity
 
 
+# ========================================
+# USER TOWER
+# ========================================
 class UserTower(nn.Module):
   """Projects a user vector into the shared embedding space"""
   def __init__(
@@ -106,11 +113,14 @@ class UserTower(nn.Module):
       cfg.dropout
     )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-      emb = self.net(x)
-      return F.normalize(emb, p=2, dim=-1)  # L2 normalise for cosine similarity
+  def forward(self, x: torch.Tensor) -> torch.Tensor:
+    emb = self.net(x)
+    return F.normalize(emb, p=2, dim=-1)  # L2 normalise for cosine similarity
 
 
+# ========================================
+# TWO-TOWER
+# ========================================
 class TwoTowerModel(nn.Module):
   def __init__(
     self,
@@ -147,7 +157,9 @@ class TwoTowerModel(nn.Module):
       return self.game_tower(game_features)
 
 
-# ---- RERANKER --------------------
+# ========================================
+# RERANKER
+# ========================================
 class Reranker(nn.Module):
   """
   Cross-encoder reranker that scores (user, game) pairs.
@@ -169,28 +181,30 @@ class Reranker(nn.Module):
       cfg.dropout
     )
 
-    def forward(
-      self,
-      user_emb: torch.Tensor,
-      game_emb: torch.Tensor,
-    ) -> torch.Tensor:
-      """
-      Creates the element-wise interactions between user embeddings and games,
-      then runs it through the MLP
+  def forward(
+    self,
+    user_emb: torch.Tensor,
+    game_emb: torch.Tensor,
+  ) -> torch.Tensor:
+    """
+    Creates the element-wise interactions between user embeddings and games,
+    then runs it through the MLP
 
-      Args:
-          user_emb (torch.Tensor): (batch, tower_output_dim)
-          game_emb (torch.Tensor): (batch, tower_output_dim)
+    Args:
+      user_emb (torch.Tensor): (batch, tower_output_dim)
+      game_emb (torch.Tensor): (batch, tower_output_dim)
 
-      Returns:
-          torch.Tensor: (batch,) game-user relevance scores
-      """
-      interactions = user_emb * game_emb
-      combined = torch.cat([user_emb, game_emb, interactions], dim=-1)
-      return self.net(combined).squeeze(-1) # (B,) relevance scores
+    Returns:
+      torch.Tensor: (batch,) game-user relevance scores
+    """
+    interactions = user_emb * game_emb
+    combined = torch.cat([user_emb, game_emb, interactions], dim=-1)
+    return self.net(combined).squeeze(-1) # (B,) relevance scores
 
 
-# ---- LOSS FUNCTION --------------------
+# ========================================
+# LOSS FUNCTION
+# ========================================
 def info_nce_loss(logits: torch.Tensor) -> torch.Tensor:
   """
   InfoNCE loss: For a batch of B (user, game) pairs, the positive for user_i is

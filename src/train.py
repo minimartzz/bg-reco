@@ -14,15 +14,19 @@ and hard-negative mining (games that were not recommended)
 import torch
 import torch.nn as nn
 import numpy as np
+import pandas as pd
 import mlflow
 import random
 from typing import List, Tuple, Dict
+from dataclasses import asdict
 from torch.utils.data import DataLoader, Dataset
 from config import ModelConfig, TrainingConfig
 
 from model import TwoTowerModel, info_nce_loss, Reranker
 
-# ---- DATASETS --------------------
+# ========================================
+# DATASETS
+# ========================================
 class TwoTowerDataset(Dataset):
   """
   Each sample is a (user_feature_vec, game_feature_vec) positive pair - a
@@ -120,8 +124,9 @@ def build_reranker_data(
   return samples
 
 
-
-# ---- TRAINING LOOPS --------------------
+# ========================================
+# TRAINING LOOPS
+# ========================================
 def extract_positive_pairs(records) -> List[Tuple[int, int]]:
   pairs = records[['profile_id', 'game_id']].drop_duplicates() # NOTE: This means games played mulitple times are not accounted for
   return list(zip(pairs['profile_id'].astype(int), pairs['game_id'].astype(int)))
@@ -200,7 +205,7 @@ def train_two_tower(
       best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
     
     if (epoch + 1) % 10 == 0:
-      print(f"  Epoch {epoch+1:3d}/{cfg.epochs} | train_loss={avg_train:.4f},  val_loss={avg_val:.4f}")
+      print(f"  [TOWER] Epoch {epoch+1:3d}/{cfg.epochs} | train_loss={avg_train:.4f},  val_loss={avg_val:.4f}")
   
   mlflow.log_metric("two_tower/best_val_loss", best_val_loss)
 
@@ -215,4 +220,89 @@ def train_reranker(
   cfg: TrainingConfig,
   device: torch.device
 ) -> Reranker:
-  optimiser = torch.optim.AdamW
+  optimiser = torch.optim.AdamW(
+    reranker.parameters(),
+    lr=cfg.reranker_lr,
+    weight_decay=cfg.weight_decay
+  )
+  criterion = nn.BCEWithLogitsLoss()
+  reranker.to(device)
+
+  for epoch in range(cfg.reranker_epochs):
+    reranker.train()
+    losses = []
+    correct = 0
+    total = 0
+
+    for u_emb, g_emb, labels in train_loader:
+      u_emb = u_emb.to(device)
+      g_emb = g_emb.to(device)
+      labels = labels.to(device)
+
+      scores = reranker(u_emb, g_emb)
+      loss = criterion(scores, labels)
+
+      optimiser.zero_grad()
+      loss.backward()
+      optimiser.step()
+      losses.append(loss.item())
+
+      # Track binary classification accuracy
+      preds = (torch.sigmoid(scores) > 0.5).float()
+      correct += (preds == labels).sum().item()
+      total += labels.size(0)
+    
+    avg_loss = float(np.mean(losses))
+    accuracy = correct / total if total > 0 else 0.0
+
+    mlflow.log_metrics(
+      {
+        "reranker/train_loss": avg_loss,
+        "reranker/train_accuracy": accuracy
+      },
+      step=epoch
+    )
+
+    if (epoch + 1) % 10 == 0:
+      print(f"  [RERANKER] Epoch {epoch+1:3d}/{cfg.reranker_epochs} | train_loss={avg_loss:.4f},  val_loss={accuracy:.4f}")
+  
+  return reranker
+
+
+# ========================================
+# MLFLOW METRICS
+# ========================================
+def _log_dataclass_params(obj, prefix: str = "") -> None:
+  """Log all fields of a dataclass as MLflow parameters"""
+  for k, v in asdict(obj).items():
+    param_name = f"{prefix}/{k}" if prefix else k
+    mlflow.log_param(param_name, str(v)[:500])
+
+
+def _log_data_summary(
+  games: pd.DataFrame,
+  records: pd.DataFrame,
+  comments: pd.DataFrame,
+  tag_vocabs: Dict[str, Dict[str, int]],
+  profile_dim: int,
+  user_dim: int
+) -> None:
+  mlflow.log_params({
+    "data/n_games": len(games),
+    "data/n_records": len(records),
+    "data/n_comments": len(comments),
+    "data/n_unique_users": records["profile_id"].nunique(),
+    "data/n_unique_games_played": records["game_id"].nunique(),
+    "data/profile_dim": profile_dim,
+    "data/user_dim": user_dim,
+    "data/tag_vocab_categories": len(tag_vocabs.get("categories", {})),
+    "data/tag_vocab_mechanics": len(tag_vocabs.get("mechanics", {})),
+    "data/tag_vocab_families": len(tag_vocabs.get("families", {})),
+    "data/tag_vocab_artists": len(tag_vocabs.get("artists", {})),
+    "data/tag_vocab_designers": len(tag_vocabs.get("designers", {})),
+  })
+
+
+# ========================================
+# TRAINING ENTRYPOINT
+# ========================================
