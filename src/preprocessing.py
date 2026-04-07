@@ -57,7 +57,7 @@ def load_data(cfg: DataConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame
     print(f"Error fetching data from DuckDB: {e}")
     return pd.DataFrame(), pd.DataFrame(), pd.DataFrame() # Returns empty DataFrames
 
-  return records, games, comments
+  return games, records, comments
 
 
 # ========================================
@@ -80,19 +80,19 @@ def build_tag_vocabularies(
   """
   vocabs: Dict[str, Dict[str, int]] = {}
   for col in tag_columns:
-    all_tags = Set[str] = set()
+    all_tags: Set[str] = set()
     for tags in games[col]:
       all_tags.update(tags)
     vocabs[col] = {tag: idx for idx, tag in enumerate(sorted(all_tags))}
   return vocabs
 
-def multi_hot_encode(tags: List[str], vocab: Dict[str, int]) -> np.ndarray:
+def multi_hot_encode(tags: np.ndarray, vocab: Dict[str, int]) -> np.ndarray:
   """
   Encodes a list of tags into a multi-hot vector based on the provided vocabulary.
   Used to encode a games tags into a fixed-length binary vector
 
   Args:
-    tags (List[str]): List of tags to encode
+    tags (np.ndarray): List of tags to encode
     vocab (Dict[str, int]): Vocabulary mapping tags to indices
 
   Returns:

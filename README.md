@@ -25,6 +25,7 @@
 
 - [About the Project](#star2-about-the-project)
 - [Details on Data](#bookmark_tabs-details-on-data)
+- [Limitations](#bookmark_tabs-details-on-data)
 - [Contact](#handshake-contact)
 - [Acknowledgements](#gem-acknowledgements)
 
@@ -38,6 +39,11 @@ A board game recommendation engine that suggests board games based on the users 
 
 - Board game details: Information extracted from BGG API
 - Player sessions details: Taken from another project of mine, [Trakka](https://github.com/minimartzz/trakka)
+
+## :stop_sign: Limitations
+
+1. (user, game) pairs only account for the first instance of play during training.
+2. User-user coplay (users who played together tend to have similar taste) are not accounted for
 
 ## :handshake: Contact
 

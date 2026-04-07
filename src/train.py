@@ -11,18 +11,37 @@ From records, every (user_id, game_id) pair that a user has actually played is a
 pair. Negative pairs come from in-batch sampling (random selection of games not played yet)
 and hard-negative mining (games that were not recommended)
 """
+import os
 import torch
 import torch.nn as nn
 import numpy as np
 import pandas as pd
 import mlflow
 import random
+import json
+import pickle
+from dotenv import load_dotenv
 from typing import List, Tuple, Dict
 from dataclasses import asdict
 from torch.utils.data import DataLoader, Dataset
-from config import ModelConfig, TrainingConfig
+from config import (
+  ModelConfig,
+  TrainingConfig,
+  EmbeddingConfig,
+  DataConfig,
+  GAME_NUMERIC_FEATURES
+)
 
 from model import TwoTowerModel, info_nce_loss, Reranker
+from preprocessing import (
+  load_data,
+  build_tag_vocabularies,
+  fit_numeric_scaler,
+  scale_numeric_features
+)
+from game_builder import build_game_profiles, get_profile_dim
+from user_builder import build_all_user_profiles, get_user_feature_dim
+load_dotenv()
 
 # ========================================
 # DATASETS
@@ -102,7 +121,7 @@ def build_reranker_data(
   user_embs: Dict[int, np.ndarray] = {}
   for uid, feats in user_features.items():
     t = torch.tensor(feats, dtype=torch.float32).unsqueeze(0).to(device)
-    user_embs[uid] = two_tower.get_game_embedding(t).cpu().numpy().squeeze()
+    user_embs[uid] = two_tower.get_user_embedding(t).cpu().numpy().squeeze()
   
   user_positives: Dict[int, set] = {}
   for uid, gid in pairs:
@@ -306,3 +325,177 @@ def _log_data_summary(
 # ========================================
 # TRAINING ENTRYPOINT
 # ========================================
+def run_training(
+  data_cfg: DataConfig      = DataConfig(),
+  emb_cfg: EmbeddingConfig  = EmbeddingConfig(),
+  model_cfg: ModelConfig    = ModelConfig(),
+  train_cfg: TrainingConfig = TrainingConfig(),
+  output_dir: str           = "models",
+  experiment_name: str      = "bg_recommender",
+) -> None:
+  os.makedirs(output_dir, exist_ok=True)
+  device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+  print(f"Device: {device}")
+
+  # ---- MLFLOW SETUP ---------------------
+  os.environ["AWS_ACCESS_KEY_ID"] = os.environ.get("MLFLOW_USER")
+  os.environ["AWS_SECRET_ACCESS_KEY"] = os.environ.get("MLFLOW_PASSWORD")
+  os.environ["MLFLOW_S3_ENDPOINT_URL"] = "http://127.0.0.1:9000"
+  os.environ["MLFLOW_S3_IGNORE_TLS"] = "true"
+
+  mlflow.set_tracking_uri("http://127.0.0.1:5000")
+  mlflow.set_experiment(experiment_name)
+
+  with mlflow.start_run(run_name="full_pipeline") as parent_run:
+    # Log hyperparameters
+    _log_dataclass_params(data_cfg, prefix="data_cfg")
+    _log_dataclass_params(emb_cfg, prefix="emb_cfg")
+    _log_dataclass_params(model_cfg, prefix="model_cfg")
+    _log_dataclass_params(train_cfg, prefix="train_cfg")
+    mlflow.log_param("device", str(device))
+
+    # 1. Load and preprocess data
+    print("[DATA] Loading data...")
+    games, records, comments = load_data(data_cfg)
+    print(f"    {len(games)} games, {len(records)} records, {len(comments)} comments")
+
+    # 2. Build Game profiles
+    print("[GAME] Building game profiles...")
+    tag_vocabs = build_tag_vocabularies(games)
+    scaler = fit_numeric_scaler(games)
+    numeric_features = scale_numeric_features(games, scaler)
+
+    game_profiles, text_encoder = build_game_profiles(
+      games, comments, tag_vocabs, numeric_features, emb_cfg
+    )
+    profile_dim = get_profile_dim(tag_vocabs, emb_cfg, len(GAME_NUMERIC_FEATURES))
+    print(f"    Game profile dim: {profile_dim}")
+    print(f"    Embedding dim (per text source): {emb_cfg.embedding_dim}")
+    print(f"    Tag vocab sizes: { {k: len(v) for k, v in tag_vocabs.items()} }")
+
+    # 3. Build User profiles
+    print("[USER] Building user profiles from play history...")
+    user_features = build_all_user_profiles(records, game_profiles, profile_dim)
+    user_dim = get_user_feature_dim(profile_dim)
+    print(f"   User feature dim: {user_dim}")
+    print(f"   Users with features: {len(user_features)}")
+
+    _log_data_summary(games, records, comments, tag_vocabs, profile_dim, user_dim)
+
+    # 4. Train two-tower model
+    print("[TOWER] Training two-tower model...")
+    all_pairs = extract_positive_pairs(records)
+    random.shuffle(all_pairs)
+
+    split = int(len(all_pairs) * (1 - train_cfg.val_fraction))
+    train_pairs, val_pairs = all_pairs[:split], all_pairs[split:]
+
+    train_ds = TwoTowerDataset(train_pairs, user_features, game_profiles)
+    val_ds = TwoTowerDataset(val_pairs, user_features, game_profiles)
+
+    effective_batch = max(2, min(train_cfg.batch_size, len(train_ds)))
+    print(f"    Train pairs: {len(train_ds)}, Val pairs: {len(val_ds)}, Batch size: {effective_batch}")
+
+    mlflow.log_params({
+      "split/n_train_pairs": len(train_ds),
+      "split/n_val_pairs": len(val_ds),
+      "split/effective_batch_size": effective_batch,
+    })
+
+    train_loader = DataLoader(
+      train_ds, batch_size=effective_batch, shuffle=True, drop_last=(len(train_ds) > effective_batch)
+    )
+    val_loader = DataLoader(
+      val_ds, batch_size=max(2, min(train_cfg.batch_size, len(val_ds))), shuffle=False, drop_last=False
+    )
+
+    two_tower_model = TwoTowerModel(user_dim, profile_dim, model_cfg)
+
+    total_params = sum(p.numel() for p in two_tower_model.parameters())
+    trainable_params = sum(p.numel() for p in two_tower_model.parameters() if p.requires_grad)
+    mlflow.log_params({
+      "model/two_tower_total_params": total_params,
+      "model/two_tower_trainable_params": trainable_params,
+    })
+
+    two_tower_model = train_two_tower(two_tower_model, train_loader, val_loader, train_cfg, device)
+
+    # 5. Train Reranker
+    print("[RERANKER] Training reranker model")
+    all_game_ids = list(game_profiles.keys())
+    reranker_data = build_reranker_data(
+      two_tower_model,
+      all_pairs,
+      user_features,
+      game_profiles,
+      all_game_ids,
+      train_cfg.num_negatives,
+      device
+    )
+
+    mlflow.log_params({
+      "raranker/n_training_samples": len(reranker_data),
+      "reranker/positive_ratio": f"{sum(1 for _, _, l in reranker_data if l > 0.5) / len(reranker_data):.3f}"
+    })
+
+    reranker_ds = RerankerDataset(reranker_data)
+    reranker_loader = DataLoader(
+      reranker_ds,
+      batch_size=train_cfg.batch_size,
+      shuffle=True,
+      drop_last=False
+    )
+    reranker = Reranker(model_cfg.tower_output_dim, model_cfg)
+
+    reranker_params = sum(p.numel() for p in reranker.parameters())
+    mlflow.log_param("model/reranker_total_params", reranker_params)
+
+    reranker = train_reranker(reranker, reranker_loader, train_cfg, device)
+
+    # 6. Save Models
+    print("[SAVE] Saving Models...")
+    torch.save(two_tower_model.state_dict(), f"{output_dir}/two_tower.pt")
+    torch.save(reranker.state_dict(), f"{output_dir}/reranker.pt")
+
+    two_tower_model.eval()
+    game_index: Dict[int, List[float]] = {}
+    for gid, profile in game_profiles.items():
+      t = torch.tensor(profile, dtype=torch.float32).unsqueeze(0).to(device)
+      emb = two_tower_model.get_game_embedding(t).cpu().numpy().squeeze(0)
+      game_index[gid] = emb.tolist()
+    
+    with open(f"{output_dir}/game_index.json", "w") as f:
+      json.dump({str(k): v for k, v in game_index.items()}, f)
+
+    with open(f"{output_dir}/game_profiles.pkl", "wb") as f:
+      pickle.dump(game_profiles, f)
+
+    with open(f"{output_dir}/tag_vocabs.pkl", "wb") as f:
+      pickle.dump(tag_vocabs, f)
+
+    with open(f"{output_dir}/scaler.pkl", "wb") as f:
+      pickle.dump(scaler, f)
+
+    with open(f"{output_dir}/text_encoder.pkl", "wb") as f:
+      pickle.dump(text_encoder, f)
+
+    with open(f"{output_dir}/emb_cfg.pkl", "wb") as f:
+      pickle.dump(emb_cfg, f)
+    
+    meta = {
+      'profile_dim': profile_dim,
+      'user_dim': user_dim,
+      'tower_output_dim': model_cfg.tower_output_dim,
+      'embedding_model': emb_cfg.model_name
+    }
+    with open(f"{output_dir}/meta.json", 'w') as f:
+      json.dump(meta, f, indent=2)
+    
+    # Log artefacts to MLflow
+    mlflow.log_artifacts(output_dir, artifact_path="model_artefacts")
+
+    print(f"Training complete. Artefacts saved to {output_dir}/")
+    print(f"MLflow run ID: {parent_run.run_id}")
+
+if __name__ == "__main__":
+  run_training()

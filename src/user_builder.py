@@ -111,7 +111,7 @@ def build_user_profile(
     return np.zeros(profile_dim + n_behavioural, dtype=np.float32)
   
   # Weighted Game Profile Centroid
-  weights = compute_interaction_weights(user_records)
+  weights = compute_interaction_weights(user_records) # NOTE: every game that a user has played has a weight
   centroid = np.zeros(profile_dim, dtype=np.float32)
   valid_weight_sum = 0.0
 

@@ -98,12 +98,14 @@ def build_encoder(
 ):
   if cfg.use_sentence_transformers:
     try:
+      print(f"[GAME BUILDER] Using Sentence transformer")
       enc = SentenceTransformerEncoder(cfg.model_name, cfg.batch_size)
       cfg.embedding_dim = enc.dim
       return enc
     except Exception as e:
       print(f"[GAME BUILDER] Error initializing the sentence transformer encoder: {e}")
   
+  print(f"[GAME BUILDER] Using TFIDF + SVD")
   corpus = [t for t in descriptions + comments if t.strip()]
   enc = TfidfSvdEncoder(cfg.embedding_dim)
   enc.fit(corpus)
@@ -167,7 +169,7 @@ def build_game_profiles(
   desc_embs = embed_descriptions(games, encoder)
   comment_embs = embed_comments(comments, encoder, cfg)
 
-  profiles = Dict[int, np.ndarray] = {}
+  profiles: Dict[int, np.ndarray] = {}
 
   for row_idx, row in games.iterrows():
     game_id = int(row['id'])
@@ -175,19 +177,23 @@ def build_game_profiles(
     # Text-based features
     desc_emb = desc_embs.get(game_id, np.zeros(encoder.dim, dtype=np.float32))
     com_emb = comment_embs.get(game_id, np.zeros(encoder.dim, dtype=np.float32))
+    print(desc_emb.shape)
+    print(com_emb.shape)
 
     # Tag-based features
     tag_vecs = []
     for col in GAME_TAG_COLUMNS:
       vocab = tag_vocabs[col]
       tags = row.get(col, [])
-      if not isinstance(tags, list):
+      if not isinstance(tags, np.ndarray):
         tags = []
       tag_vecs.append(multi_hot_encode(tags, vocab))
     tag_vec = np.concatenate(tag_vecs)
+    print(tag_vec.shape)
 
     # Numeric features
     num_vec = numeric_features[row_idx].astype(np.float32)
+    print(num_vec.shape)
 
     # Concatenate all features - Game profile vector
     profile = np.concatenate([desc_emb, com_emb, tag_vec, num_vec])
