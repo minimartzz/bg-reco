@@ -177,8 +177,6 @@ def build_game_profiles(
     # Text-based features
     desc_emb = desc_embs.get(game_id, np.zeros(encoder.dim, dtype=np.float32))
     com_emb = comment_embs.get(game_id, np.zeros(encoder.dim, dtype=np.float32))
-    print(desc_emb.shape)
-    print(com_emb.shape)
 
     # Tag-based features
     tag_vecs = []
@@ -189,11 +187,9 @@ def build_game_profiles(
         tags = []
       tag_vecs.append(multi_hot_encode(tags, vocab))
     tag_vec = np.concatenate(tag_vecs)
-    print(tag_vec.shape)
 
     # Numeric features
     num_vec = numeric_features[row_idx].astype(np.float32)
-    print(num_vec.shape)
 
     # Concatenate all features - Game profile vector
     profile = np.concatenate([desc_emb, com_emb, tag_vec, num_vec])

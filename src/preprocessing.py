@@ -48,7 +48,7 @@ def load_data(cfg: DataConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame
   
   # Load games and comments from DuckDB
   try:
-    base_dir = Path(cfg.duckdb_file).resolve().parent.parent
+    base_dir = Path(__file__).resolve().parent.parent
     duckdb_path = base_dir / "data" / cfg.duckdb_file
     con = duckdb.connect(duckdb_path)
     games = con.execute("SELECT * FROM bgg.games").fetchdf()

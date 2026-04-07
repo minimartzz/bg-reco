@@ -131,13 +131,13 @@ def build_reranker_data(
     if uid not in user_embs or gid not in game_embs:
       continue
   
-  u_emb = user_embs[uid]
-  samples.append((u_emb, game_embs[gid], 1.0))
+    u_emb = user_embs[uid]
+    samples.append((u_emb, game_embs[gid], 1.0))
 
-  negative_pools = [g for g in all_game_ids if g not in user_positives.get(uid, set()) and g in game_embs]
-  neg_ids = random.sample(negative_pools, min(num_negatives, len(negative_pools)))
-  for neg_gid in neg_ids:
-    samples.append((u_emb, game_embs[neg_gid], 0.0))
+    negative_pools = [g for g in all_game_ids if g not in user_positives.get(uid, set()) and g in game_embs]
+    neg_ids = random.sample(negative_pools, min(num_negatives, len(negative_pools)))
+    for neg_gid in neg_ids:
+      samples.append((u_emb, game_embs[neg_gid], 0.0))
   
   random.shuffle(samples)
   return samples
@@ -193,7 +193,7 @@ def train_two_tower(
       train_losses.append(loss.item())
     
     scheduler.step()
-    current_lr = scheduler.get_last_lr()
+    current_lr = scheduler.get_last_lr()[0]
 
     # Validate
     model.eval()
@@ -409,7 +409,7 @@ def run_training(
       val_ds, batch_size=max(2, min(train_cfg.batch_size, len(val_ds))), shuffle=False, drop_last=False
     )
 
-    two_tower_model = TwoTowerModel(user_dim, profile_dim, model_cfg)
+    two_tower_model = TwoTowerModel(profile_dim, user_dim, model_cfg)
 
     total_params = sum(p.numel() for p in two_tower_model.parameters())
     trainable_params = sum(p.numel() for p in two_tower_model.parameters() if p.requires_grad)
@@ -495,7 +495,7 @@ def run_training(
     mlflow.log_artifacts(output_dir, artifact_path="model_artefacts")
 
     print(f"Training complete. Artefacts saved to {output_dir}/")
-    print(f"MLflow run ID: {parent_run.run_id}")
+    print(f"MLflow run ID: {parent_run.info.run_id}")
 
 if __name__ == "__main__":
   run_training()
