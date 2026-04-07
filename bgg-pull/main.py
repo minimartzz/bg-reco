@@ -279,24 +279,37 @@ def main(
   page_range: int = 550,
   min_words: int = 15,
   max_pages: int = 20,
-  min_comments: int = 30
+  min_comments: int = 30,
+  specific_bgg_id: int = None
 ):
-  con = setup_duckdb(DUCKDB_PATH)
-  df = pd.read_csv(BGG_CSV_PATH)
+  con = setup_duckdb(duckdb_path)
+  df = pd.read_csv(bgg_csv_path)
 
-  for _ in range(num_games_to_ingest):
-    bgg_id = get_bgg_id(df)
-    game_info = retrieve_game_info(bgg_id)
+  if specific_bgg_id:
+    print(f"[BGG] Pulling single game id: {specific_bgg_id}")
+    game_info = retrieve_game_info(specific_bgg_id)
     game_comments = retrieve_game_comments(
-      bgg_id,
+      specific_bgg_id,
       page_range,
       min_words,
       max_pages,
       min_comments
     )
-    df = insert_and_update(bgg_id, con, game_info, game_comments, df)
+    df = insert_and_update(specific_bgg_id, con, game_info, game_comments, df)
+  else:
+    for _ in range(num_games_to_ingest):
+      bgg_id = get_bgg_id(df)
+      game_info = retrieve_game_info(bgg_id)
+      game_comments = retrieve_game_comments(
+        bgg_id,
+        page_range,
+        min_words,
+        max_pages,
+        min_comments
+      )
+      df = insert_and_update(bgg_id, con, game_info, game_comments, df)
   
-  df.to_csv(BGG_CSV_PATH, index=False)
+  df.to_csv(bgg_csv_path, index=False)
   con.close()
 
 if __name__ == "__main__":
@@ -306,9 +319,10 @@ if __name__ == "__main__":
   )
   parser.add_argument('-n', '--num', type=int, default=1, help="Number of games to ingest starting from the most popular. (Default 1)")
   parser.add_argument('-p', '--pages', type=int, default=20, help="Maximum number of comment pages to search through (Default 20)")
-  parser.add_argument('-r', '--range', type=int, default=550, help="Range of comment pages to randomly search across. (Default 550)")
+  parser.add_argument('-r', '--range', type=int, default=300, help="Range of comment pages to randomly search across. (Default 300)")
   parser.add_argument('-c', '--comments', type=int, default=30, help="Minimum number comments to collect (Default 30)")
   parser.add_argument('-w', '--words', type=int, default=15, help="Minimum number of words in a comment to be included (Default 15)")
+  parser.add_argument('-i', '--id', type=int, help="Pull data for a specific BGG ID")
   args = parser.parse_args()
 
   main(
@@ -318,5 +332,6 @@ if __name__ == "__main__":
     page_range=args.range,
     min_words=args.words,
     max_pages=args.pages,
-    min_comments=args.comments
+    min_comments=args.comments,
+    specific_bgg_id=args.id
   )
