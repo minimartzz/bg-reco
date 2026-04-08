@@ -188,7 +188,7 @@ def retrieve_game_comments(
   max_pages: int = 20,
   min_comments: int = 30
 ):
-  interval = 10
+  interval = 5
   comments = {
     "bgg_id": [],
     "rating": [],
@@ -203,6 +203,7 @@ def retrieve_game_comments(
     time.sleep(interval)
     it += 1
     page = random.choice(page_numbers)
+    page_numbers.remove(page)
     url = f"https://boardgamegeek.com/xmlapi2/thing?id={bgg_id}&type=boardgame&ratingcomments=1&page={page}"
     print(f"    Iteration: {it} | Page: {page} | Number of Comments: {len(comments['comment'])} | Number of pages searched: {searched_pages}")
 
@@ -221,6 +222,7 @@ def retrieve_game_comments(
     all_comments = tree.findall('.//comment')
     if not all_comments:
       print("[COMMENT] No comments found on this page.")
+      searched_pages += 1
       continue
 
     for comment in all_comments:
@@ -249,7 +251,7 @@ def retrieve_game_comments(
 # ========================================
 # Insert to DB and Update DF
 # ========================================
-def insert_and_update(bgg_id: int, con, game_info: dict, game_comments: dict, df: pd.DataFrame):
+def insert_and_update(bgg_id: int, con, game_info: dict, game_comments: dict, df: pd.DataFrame, comments_only: bool = False):
   # Convert both dicts to pandas dfs
   game_info = {k: [v] for k, v in game_info.items()}
   game_info_df = pd.DataFrame.from_dict(game_info)
@@ -257,8 +259,9 @@ def insert_and_update(bgg_id: int, con, game_info: dict, game_comments: dict, df
 
   # Try to insert
   try:
-    print(f"[INSERT] Inserting game info of {bgg_id} into DB")
-    con.execute("INSERT INTO bgg.games SELECT * FROM game_info_df")
+    if not comments_only:
+      print(f"[INSERT] Inserting game info of {bgg_id} into DB")
+      con.execute("INSERT INTO bgg.games SELECT * FROM game_info_df")
 
     print(f"[INSERT] Inserting game comments of {bgg_id} into DB")
     con.execute("INSERT INTO bgg.comments SELECT * FROM game_comments")
@@ -280,22 +283,26 @@ def main(
   min_words: int = 15,
   max_pages: int = 20,
   min_comments: int = 30,
-  specific_bgg_id: int = None
+  specific_bgg_ids: list = None,
+  comments_only: bool = False
 ):
   con = setup_duckdb(duckdb_path)
   df = pd.read_csv(bgg_csv_path)
 
-  if specific_bgg_id:
-    print(f"[BGG] Pulling single game id: {specific_bgg_id}")
-    game_info = retrieve_game_info(specific_bgg_id)
-    game_comments = retrieve_game_comments(
-      specific_bgg_id,
-      page_range,
-      min_words,
-      max_pages,
-      min_comments
-    )
-    df = insert_and_update(specific_bgg_id, con, game_info, game_comments, df)
+  if specific_bgg_ids:
+    print(f"[BGG] Pulling game ids: {specific_bgg_ids}")
+    for bgg_id in specific_bgg_ids:
+      print(f"   Pulling game id: {bgg_id}")
+      bgg_id = int(bgg_id)
+      game_info = retrieve_game_info(bgg_id)
+      game_comments = retrieve_game_comments(
+        bgg_id,
+        page_range,
+        min_words,
+        max_pages,
+        min_comments
+      )
+      df = insert_and_update(bgg_id, con, game_info, game_comments, df, comments_only)
   else:
     for _ in range(num_games_to_ingest):
       bgg_id = get_bgg_id(df)
@@ -307,7 +314,7 @@ def main(
         max_pages,
         min_comments
       )
-      df = insert_and_update(bgg_id, con, game_info, game_comments, df)
+      df = insert_and_update(bgg_id, con, game_info, game_comments, df, comments_only)
   
   df.to_csv(bgg_csv_path, index=False)
   con.close()
@@ -322,8 +329,11 @@ if __name__ == "__main__":
   parser.add_argument('-r', '--range', type=int, default=300, help="Range of comment pages to randomly search across. (Default 300)")
   parser.add_argument('-c', '--comments', type=int, default=30, help="Minimum number comments to collect (Default 30)")
   parser.add_argument('-w', '--words', type=int, default=15, help="Minimum number of words in a comment to be included (Default 15)")
-  parser.add_argument('-i', '--id', type=int, help="Pull data for a specific BGG ID")
+  parser.add_argument('-i', '--id', nargs='+', help="Pull data for a list of BGG ID")
+  parser.add_argument('-co', '--comments_only', action='store_true', default=False, help="Append additional comments for specific game IDs")
   args = parser.parse_args()
+  print(type(args.id))
+  print(args.id)
 
   main(
     DUCKDB_PATH,
@@ -333,5 +343,6 @@ if __name__ == "__main__":
     min_words=args.words,
     max_pages=args.pages,
     min_comments=args.comments,
-    specific_bgg_id=args.id
+    specific_bgg_ids=args.id,
+    comments_only=args.comments_only
   )
