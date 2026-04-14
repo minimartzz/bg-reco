@@ -332,8 +332,6 @@ if __name__ == "__main__":
   parser.add_argument('-i', '--id', nargs='+', help="Pull data for a list of BGG ID")
   parser.add_argument('-co', '--comments_only', action='store_true', default=False, help="Append additional comments for specific game IDs")
   args = parser.parse_args()
-  print(type(args.id))
-  print(args.id)
 
   main(
     DUCKDB_PATH,
