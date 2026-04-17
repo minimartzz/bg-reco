@@ -63,6 +63,8 @@ bg-reco/
     ├── inference.py              # Inference engine (retrieval + reranking)
     ├── api.py                    # FastAPI server
     ├── evaluate.py               # Model evaluation script
+    ├── pyproject.toml            # Project requirements
+    ├── Dockerfile                # Docker entrypoint
     └── model/
         ├── two_tower.pt
         ├── reranker.pt
