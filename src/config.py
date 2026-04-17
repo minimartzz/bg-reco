@@ -42,16 +42,16 @@ class ModelConfig:
 
 @dataclass
 class TrainingConfig:
-  epochs: int = 70
-  batch_size: int = 64
+  epochs: int = 20
+  batch_size: int = 128
   learning_rate: float = 1e-3
   weight_decay: float = 1e-5 
   # Negative sampling ratio for contrastive training
-  num_negatives: int = 5
+  num_negatives: int = 10
   # Train/ Val split
   val_fraction: float = 0.2
   # Reranker training
-  reranker_epochs: int = 30
+  reranker_epochs: int = 70
   reranker_lr: float = 5e-4
   # Number of candidates the two-tower model passes to reranker
   retrieval_top_k = 50
