@@ -70,6 +70,41 @@ def get_link_type_list(tree, tag):
   i = [l.get('id') for l in tree.findall(f".//link[@type='{tag}']")]
   return i, v
 
+def get_api_comment_count(page: int, bgg_id: int, interval: int) -> int | None:
+  time.sleep(interval)
+  url = f"https://boardgamegeek.com/xmlapi2/thing?id={bgg_id}&type=boardgame&ratingcomments=1&page={page}"
+  response = requests.get(
+    url,
+    headers={"Authorization": f"Bearer {TOKEN}"}
+  )
+
+  if response.status_code == 200:
+    tree = ElementTree.fromstring(response.content)
+  else:
+    return 
+
+  # Check if there are any comments on the page
+  all_comments = tree.findall('.//comment')
+  return len(all_comments)
+
+def find_highest_page_with_comments(max_page: int, bgg_id, interval: int) -> int | None:
+  low = 1
+  high = max_page - 1
+  best = None
+
+  while low <= high:
+    mid = (low + high) // 2
+    count = get_api_comment_count(mid, bgg_id, interval)
+
+    if count > 0:
+      best = mid
+      low = mid + 1
+    else:
+      high = mid - 1
+  print(f"[COMMENT] Max page with comments: Page {best}")
+  return best
+
+
 # ========================================
 # Load DuckDB store
 # ========================================
@@ -194,7 +229,8 @@ def retrieve_game_comments(
     "rating": [],
     "comment": []
   }
-  page_numbers = [i for i in range(1, page_range+1)]
+  max_page = find_highest_page_with_comments(page_range, bgg_id, interval)
+  page_numbers = [i for i in range(1, max_page+1)]
   searched_pages = 1
   it = 0
 
