@@ -1,0 +1,8 @@
+# Pytorch model weights
+*.pt filter=lfs diff=lfs merge=lfs -text
+
+# JSON configurations
+*.json filter=lfs diff=lfs merge=lfs -text
+
+# Pickle files
+*.pkl filter=lfs diff=lfs merge=lfs -text
