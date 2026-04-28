@@ -2,16 +2,13 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
 # Copy dependency specs
-COPY pyproject.toml ./
+COPY requirements.txt ./
 
 # Install dependencies
-RUN uv pip install --system --no-cache \
+RUN pip install --no-cache-dir \
     --extra-index-url https://download.pytorch.org/whl/cpu \
-    -r pyproject.toml
+    -r requirements.txt
 
 # Copy application code and model artifacts
 COPY . .
