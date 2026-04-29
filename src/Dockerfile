@@ -14,7 +14,7 @@ RUN pip install --no-cache-dir \
 ARG MODEL_VERSION=v0.1.0
 ARG GITHUB_REPO=minimartzz/bg-reco
 
-RUN apt-get update && apt-get isntall -y curl && rm -rf /var/lib/apt/lists/* && \
+RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/* && \
     mkdir -p models && \
     for file in emb_cfg.pkl game_index.json game_profiles.pkl meta.json reranker.pt \
     scaler.pkl tag_vocabs.pkl text_encoder.pkl two_tower.pt; do \
