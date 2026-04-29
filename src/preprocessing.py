@@ -11,11 +11,9 @@ COMPONENTS:
 - scale_numeric_features: Scales numeric features using the fitted scaler
 """
 import os
-import duckdb
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from supabase import create_client, Client
 from typing import Tuple, Dict, Set, List
 from config import DataConfig, GAME_TAG_COLUMNS, GAME_NUMERIC_FEATURES
 from sklearn.preprocessing import StandardScaler
@@ -33,6 +31,8 @@ def load_data(cfg: DataConfig) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame
   Returns:
     Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]: Records, Games and Comments
   """
+  import duckdb
+  from supabase import create_client, Client
   # Get the records from Supabase
   try:
     supabase: Client = create_client(cfg.supa_url, cfg.supa_key)
