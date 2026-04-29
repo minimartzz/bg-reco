@@ -69,7 +69,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
   title="Board Game Recommendation API",
   description="Two-tower retrieval + cross-encoder rereanking recommendation system for board games",
-  version="1.0.0"
+  version="1.0.0",
+  lifespan=lifespan
 )
 
 @app.get("/health")
