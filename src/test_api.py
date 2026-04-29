@@ -195,9 +195,9 @@ if __name__ == "__main__":
 
     test_health()
     test_recommend_multi_history()
-    # test_recommend_single_history()
-    # test_recommend_exclude_toggle()
-    # test_empty_history()
+    test_recommend_single_history()
+    test_recommend_exclude_toggle()
+    test_empty_history()
 
     print("=" * 50)
     print("[TEST API] ALL TESTS PASSED")
